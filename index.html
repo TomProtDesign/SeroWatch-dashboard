@@ -30,11 +30,10 @@
         label { font-size: 0.75rem; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; color: #95a5a6; margin-bottom: 8px; }
         select { 
             padding: 8px; border-radius: 4px; border: 1px solid #d1d5da; background: white; 
-            font-size: 0.9rem; color: #24292e; outline: none; transition: border 0.2s;
+            font-size: 0.9rem; color: #24292e; outline: none;
         }
-        select:focus { border-color: #0366d6; }
 
-        #plot { width: 100%; height: 750px; }
+        #plot { width: 100%; height: 700px; }
         .footer { text-align: center; padding: 40px; color: #bdc3c7; font-size: 0.8em; font-weight: 300; }
         #counter { font-size: 0.85em; margin-top: 10px; color: #7f8c8d; text-align: right; }
     </style>
@@ -43,7 +42,7 @@
 
 <div class="header">
     <h1>SeroWatch Antibody Plot Browser</h1>
-    <p>Serological profile of 3000 samples for Respiratory Infection</p>
+    <p>Serological profil of 3000 samples for Respiratory Infection</p>
 </div>
 
 <div class="container">
@@ -69,64 +68,63 @@
 </div>
 
 <script>
-    const CUTOFFS = {
-        'NP-FLU_IgM': [37200, 62100],
-        'NP-FLU_IgA': [5500, 10200],
-        'NP-FLU_IgG': 40000,
-        'NP-COV_IgM': [31400, 57100],
-        'NP-COV_IgA': [5200, 8100],
-        'NP-COV_IgG': 40000,
-        'NP-RSV_IgM': [36400, 68700],
-        'NP-RSV_IgA': [4300, 7800],
-        'NP-RSV_IgG': 40000
-    };
-
     let rawData = [];
     const CSV_FILE = "SeroWatch_ARI_W38Y24_data.csv";
 
+    // 1. Load Data
     d3.csv(CSV_FILE).then(data => {
         data.forEach(d => {
+            // Convert numbers
             Object.keys(d).forEach(key => {
                 if (!isNaN(d[key]) && d[key] !== "") d[key] = +d[key];
             });
-            const start = Math.floor(d.AGE / 10) * 10;
+            // Age groups
+            const ageVal = d.AGE || 0;
+            const start = Math.floor(ageVal / 10) * 10;
             d.age_group = `${start}-${start + 9} y.o.`;
         });
         rawData = data;
         setupSelectors();
         draw();
+    }).catch(err => {
+        document.getElementById('counter').innerHTML = `<b style="color:red">Error: ${err.message}</b>`;
     });
 
+    // 2. Setup Menus
     function setupSelectors() {
         const keys = Object.keys(rawData[0]);
-        const measures = keys.filter(k => !['N°INCLUSION', 'SEXE', 'DEPARTMENT OF SAMPLING', 'AGE', 'age_group'].includes(k));
+        const excluded = ['N°INCLUSION', 'SEXE', 'DEPARTMENT OF SAMPLING', 'AGE', 'age_group'];
+        const measures = keys.filter(k => !excluded.includes(k));
+        
         const xSelect = document.getElementById('x-axis');
         const ySelect = document.getElementById('y-axis');
+        
         measures.forEach(m => {
             xSelect.add(new Option(m, m));
             ySelect.add(new Option(m, m));
         });
-        ySelect.selectedIndex = 2;
-        document.getElementById('f-dept').add(new Option('All', 'All')); // Safety
+        if (measures.length > 2) ySelect.selectedIndex = 2;
+
         fillOptions('f-dept', 'DEPARTMENT OF SAMPLING');
         fillOptions('f-sexe', 'SEXE');
         fillOptions('f-age', 'age_group', true);
+
         document.querySelectorAll('select').forEach(s => s.addEventListener('change', draw));
     }
 
     function fillOptions(id, key, isAge = false) {
         const select = document.getElementById(id);
-        const values = [...new Set(rawData.map(d => d[key]))].filter(v => v !== null && v !== undefined && v !== "");
+        const values = [...new Set(rawData.map(d => d[key]))].filter(v => v !== "" && v !== null);
+        
         values.sort((a, b) => {
             if (isAge) return parseInt(a) - parseInt(b);
-            // On force la conversion en String avant le localeCompare pour éviter l'erreur
-            return String(a).localeCompare(String(b));
+            return String(a).localeCompare(String(b)); // Fix for numeric depts
         });
-        values.forEach(v => {
-            if (v !== "All") select.add(new Option(v, v));
-        });
+
+        values.forEach(v => select.add(new Option(v, v)));
     }
 
+    // 3. Draw Plot
     function draw() {
         const conf = {
             x: document.getElementById('x-axis').value,
@@ -143,87 +141,32 @@
             (conf.age === 'All' || d.age_group === conf.age)
         );
 
-        document.getElementById('counter').innerText = `Displaying ${filtered.length} of ${rawData.length} samples`;
+        document.getElementById('counter').innerText = `Showing ${filtered.length} samples`;
 
         const groups = [...new Set(filtered.map(d => d[conf.color]))].sort();
         const traces = groups.map(g => {
             const sub = filtered.filter(d => d[conf.color] === g);
             return {
-                x: sub.map(d => d[conf.x]), y: sub.map(d => d[conf.y]),
-                name: String(g), mode: 'markers', type: 'scatter',
-                marker: { size: 6, opacity: 0.5, line: {width: 0.4, color: 'white'} },
-                text: sub.map(d => `ID: ${d['N°INCLUSION']}<br>Age: ${d.AGE}<br>Sex: ${d.SEXE}`)
+                x: sub.map(d => d[conf.x]),
+                y: sub.map(d => d[conf.y]),
+                name: String(g),
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 7, opacity: 0.5, line: {width: 0.5, color: 'white'} },
+                text: sub.map(d => `ID: ${d['N°INCLUSION']}<br>Age: ${d.AGE}`)
             };
         });
 
-        const shapes = [];
-        const annotations = [];
-
-        function addThresholds(axis, colName) {
-            const val = CUTOFFS[colName];
-            if (!val) return;
-            const isX = (axis === 'x');
-            const dashStyle = { color: '#bdc3c7', width: 1, dash: 'dash' };
-
-            if (Array.isArray(val)) {
-                // Two lines for IgM/IgA
-                val.forEach(v => {
-                    shapes.push({
-                        type: 'line', x0: isX ? v : 0, x1: isX ? v : 1, y0: isX ? 0 : v, y1: isX ? 1 : v,
-                        xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', line: dashStyle
-                    });
-                });
-                // Annotations
-                const labels = ['NEG', 'UNDET', 'POS'];
-                const pos = [val[0]/2, (val[0]+val[1])/2, val[1]*1.5];
-                labels.forEach((l, i) => {
-                    annotations.push({
-                        x: isX ? pos[i] : 0.02, y: isX ? 0.02 : pos[i],
-                        xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y',
-                        text: l, showarrow: false, font: { size: 9, color: '#95a5a6' },
-                        xanchor: isX ? 'center' : 'left', yanchor: isX ? 'bottom' : 'middle'
-                    });
-                });
-            } else {
-                // Single line for IgG
-                shapes.push({
-                    type: 'line', x0: isX ? val : 0, x1: isX ? val : 1, y0: isX ? 0 : val, y1: isX ? 1 : val,
-                    xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', line: dashStyle
-                });
-                // Annotations
-                annotations.push(
-                    { x: isX ? val/2 : 0.02, y: isX ? 0.02 : val/2, text: 'NEG', showarrow: false, font: {size: 9, color: '#95a5a6'}, xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', xanchor: isX ? 'center' : 'left' },
-                    { x: isX ? val*1.5 : 0.02, y: isX ? 0.02 : val*1.5, text: 'POS', showarrow: false, font: {size: 9, color: '#95a5a6'}, xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', xanchor: isX ? 'center' : 'left' }
-                );
-            }
-        }
-
-        addThresholds('x', conf.x);
-        addThresholds('y', conf.y);
-
-        const isLogX = !conf.x.includes('Avidity');
-        const isLogY = !conf.y.includes('Avidity');
-
         const layout = {
             template: 'plotly_white',
-            xaxis: { 
-                title: { text: conf.x, font: { size: 12, color: '#7f8c8d' } }, 
-                type: isLogX ? 'log' : 'linear', 
-                gridcolor: '#f0f0f0', zeroline: false 
-            },
-            yaxis: { 
-                title: { text: conf.y, font: { size: 12, color: '#7f8c8d' } }, 
-                type: isLogY ? 'log' : 'linear', 
-                gridcolor: '#f0f0f0', zeroline: false 
-            },
+            xaxis: { title: { text: conf.x }, type: 'linear', gridcolor: '#f0f0f0' },
+            yaxis: { title: { text: conf.y }, type: 'linear', gridcolor: '#f0f0f0' },
             margin: { t: 40, r: 20, b: 80, l: 80 },
             hovermode: 'closest',
-            legend: { orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center' },
-            shapes: shapes,
-            annotations: annotations
+            legend: { orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center' }
         };
 
-        Plotly.newPlot('plot', traces, layout, {responsive: true, displayModeBar: true});
+        Plotly.newPlot('plot', traces, layout, {responsive: true});
     }
 </script>
 </body>
