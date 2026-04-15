@@ -135,6 +135,16 @@
             color: document.getElementById('color-by').value
         };
 
+        // Helper function to add units automatically
+        const formatTitle = (name) => {
+            if (name.includes('IgG') || name.includes('IgM') || name.includes('IgA')) {
+                return `${name} (RLU/s)`;
+            } else if (name.toLowerCase().includes('avid')) {
+                return `${name} (Avidity Index)`;
+            }
+            return name;
+        };
+
         const filtered = rawData.filter(d => 
             (conf.dept === 'All' || d['DEPARTMENT OF SAMPLING'] == conf.dept) &&
             (conf.sexe === 'All' || d.SEXE === conf.sexe) &&
@@ -159,11 +169,19 @@
 
         const layout = {
             template: 'plotly_white',
-            xaxis: { title: { text: conf.x }, type: 'linear', gridcolor: '#f0f0f0' },
-            yaxis: { title: { text: conf.y }, type: 'linear', gridcolor: '#f0f0f0' },
+            xaxis: { 
+                title: { text: formatTitle(conf.x), font: { size: 13, color: '#34495e' } }, 
+                type: 'linear', 
+                gridcolor: '#f0f0f0' 
+            },
+            yaxis: { 
+                title: { text: formatTitle(conf.y), font: { size: 13, color: '#34495e' } }, 
+                type: 'linear', 
+                gridcolor: '#f0f0f0' 
+            },
             margin: { t: 40, r: 20, b: 80, l: 80 },
             hovermode: 'closest',
-            legend: { orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center' }
+            legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' }
         };
 
         Plotly.newPlot('plot', traces, layout, {responsive: true});
