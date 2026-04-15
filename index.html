@@ -34,7 +34,7 @@
         }
         select:focus { border-color: #0366d6; }
 
-        #plot { width: 100%; height: 700px; }
+        #plot { width: 100%; height: 750px; }
         .footer { text-align: center; padding: 40px; color: #bdc3c7; font-size: 0.8em; font-weight: 300; }
         #counter { font-size: 0.85em; margin-top: 10px; color: #7f8c8d; text-align: right; }
     </style>
@@ -65,11 +65,10 @@
 </div>
 
 <div class="footer">
-    &copy; 2024 SeroWatch Project | Data source: SeroWatch_ARI_W38Y24_data.csv
+    &copy; 2026 SeroWatch Project | Data source: SeroWatch_ARI_W38Y24_data.csv
 </div>
 
 <script>
-    // --- 1. CONFIGURATION: ENTER YOUR CUT-OFF VALUES HERE ---
     const CUTOFFS = {
         'NP-FLU_IgM': [37200, 62100],
         'NP-FLU_IgA': [5500, 10200],
@@ -80,7 +79,6 @@
         'NP-RSV_IgM': [36400, 68700],
         'NP-RSV_IgA': [4300, 7800],
         'NP-RSV_IgG': 40000
-        // No cutoff for Avidity
     };
 
     let rawData = [];
@@ -100,24 +98,26 @@
     });
 
     function setupSelectors() {
-        const measures = Object.keys(rawData[0]).filter(k => 
-            !['N°INCLUSION', 'SEXE', 'DEPARTMENT OF SAMPLING', 'AGE', 'age_group'].includes(k)
-        );
-
-        const fill = (id, options) => {
-            const s = document.getElementById(id);
-            options.forEach(o => s.add(new Option(o, o)));
-        };
-
-        fill('x-axis', measures);
-        fill('y-axis', measures);
-        document.getElementById('y-axis').selectedIndex = 2; // Default to IgG
-
-        fill('f-dept', [...new Set(rawData.map(d => d['DEPARTMENT OF SAMPLING']))].sort());
-        fill('f-sexe', [...new Set(rawData.map(d => d.SEXE))].sort());
-        fill('f-age', [...new Set(rawData.map(d => d.age_group))].sort((a,b) => parseInt(a)-parseInt(b)));
-
+        const keys = Object.keys(rawData[0]);
+        const measures = keys.filter(k => !['N°INCLUSION', 'SEXE', 'DEPARTMENT OF SAMPLING', 'AGE', 'age_group'].includes(k));
+        const xSelect = document.getElementById('x-axis');
+        const ySelect = document.getElementById('y-axis');
+        measures.forEach(m => {
+            xSelect.add(new Option(m, m));
+            ySelect.add(new Option(m, m));
+        });
+        ySelect.selectedIndex = 2;
+        document.getElementById('f-dept').add(new Option('All', 'All')); // Safety
+        fillOptions('f-dept', 'DEPARTMENT OF SAMPLING');
+        fillOptions('f-sexe', 'SEXE');
+        fillOptions('f-age', 'age_group', true);
         document.querySelectorAll('select').forEach(s => s.addEventListener('change', draw));
+    }
+
+    function fillOptions(id, key, isAge = false) {
+        const select = document.getElementById(id);
+        const values = [...new Set(rawData.map(d => d[key]))].sort((a, b) => isAge ? parseInt(a) - parseInt(b) : a.localeCompare(b));
+        values.forEach(v => { if(v !== "All") select.add(new Option(v, v)); });
     }
 
     function draw() {
@@ -142,64 +142,78 @@
         const traces = groups.map(g => {
             const sub = filtered.filter(d => d[conf.color] === g);
             return {
-                x: sub.map(d => d[conf.x]),
-                y: sub.map(d => d[conf.y]),
-                name: String(g),
-                mode: 'markers',
-                type: 'scatter',
-                marker: { size: 7, opacity: 0.5, line: {width: 0.5, color: 'white'} },
+                x: sub.map(d => d[conf.x]), y: sub.map(d => d[conf.y]),
+                name: String(g), mode: 'markers', type: 'scatter',
+                marker: { size: 6, opacity: 0.5, line: {width: 0.4, color: 'white'} },
                 text: sub.map(d => `ID: ${d['N°INCLUSION']}<br>Age: ${d.AGE}<br>Sex: ${d.SEXE}`)
             };
         });
 
-        // SHAPES (Cut-off lines)
         const shapes = [];
-        
-        function addShape(axis, value) {
+        const annotations = [];
+
+        function addThresholds(axis, colName) {
+            const val = CUTOFFS[colName];
+            if (!val) return;
             const isX = (axis === 'x');
-            if (!value) return;
-        
-            if (Array.isArray(value)) {
-                // Draw a SHADED RECTANGLE for Gray Zones
-                shapes.push({
-                    type: 'rect',
-                    x0: isX ? value[0] : 0,
-                    x1: isX ? value[1] : 1,
-                    y0: isX ? 0 : value[0],
-                    y1: isX ? 1 : value[1],
-                    xref: isX ? 'x' : 'paper',
-                    yref: isX ? 'paper' : 'y',
-                    fillcolor: '#e0e0e0', // Light gray
-                    opacity: 0.4,         // Transparent
-                    line: { width: 0 }    // No border
+            const dashStyle = { color: '#bdc3c7', width: 1, dash: 'dash' };
+
+            if (Array.isArray(val)) {
+                // Two lines for IgM/IgA
+                val.forEach(v => {
+                    shapes.push({
+                        type: 'line', x0: isX ? v : 0, x1: isX ? v : 1, y0: isX ? 0 : v, y1: isX ? 1 : v,
+                        xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', line: dashStyle
+                    });
+                });
+                // Annotations
+                const labels = ['NEG', 'UNDET', 'POS'];
+                const pos = [val[0]/2, (val[0]+val[1])/2, val[1]*1.5];
+                labels.forEach((l, i) => {
+                    annotations.push({
+                        x: isX ? pos[i] : 0.02, y: isX ? 0.02 : pos[i],
+                        xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y',
+                        text: l, showarrow: false, font: { size: 9, color: '#95a5a6' },
+                        xanchor: isX ? 'center' : 'left', yanchor: isX ? 'bottom' : 'middle'
+                    });
                 });
             } else {
-                // Draw a SINGLE DASHED LINE for fixed thresholds
+                // Single line for IgG
                 shapes.push({
-                    type: 'line',
-                    x0: isX ? value : 0,
-                    x1: isX ? value : 1,
-                    y0: isX ? 0 : value,
-                    y1: isX ? 1 : value,
-                    xref: isX ? 'x' : 'paper',
-                    yref: isX ? 'paper' : 'y',
-                    line: { color: '#bdc3c7', width: 1.5, dash: 'dash' }
+                    type: 'line', x0: isX ? val : 0, x1: isX ? val : 1, y0: isX ? 0 : val, y1: isX ? 1 : val,
+                    xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', line: dashStyle
                 });
+                // Annotations
+                annotations.push(
+                    { x: isX ? val/2 : 0.02, y: isX ? 0.02 : val/2, text: 'NEG', showarrow: false, font: {size: 9, color: '#95a5a6'}, xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', xanchor: isX ? 'center' : 'left' },
+                    { x: isX ? val*1.5 : 0.02, y: isX ? 0.02 : val*1.5, text: 'POS', showarrow: false, font: {size: 9, color: '#95a5a6'}, xref: isX ? 'x' : 'paper', yref: isX ? 'paper' : 'y', xanchor: isX ? 'center' : 'left' }
+                );
             }
         }
-        
-        addShape('x', CUTOFFS[conf.x]);
-        addShape('y', CUTOFFS[conf.y]);
+
+        addThresholds('x', conf.x);
+        addThresholds('y', conf.y);
+
+        const isLogX = !conf.x.includes('Avidity');
+        const isLogY = !conf.y.includes('Avidity');
 
         const layout = {
             template: 'plotly_white',
-            xaxis: { title: { text: conf.x, font: { size: 12, color: '#7f8c8d' } }, gridcolor: '#f0f0f0', zeroline: false },
-            yaxis: { title: { text: conf.y, font: { size: 12, color: '#7f8c8d' } }, gridcolor: '#f0f0f0', zeroline: false },
+            xaxis: { 
+                title: { text: conf.x, font: { size: 12, color: '#7f8c8d' } }, 
+                type: isLogX ? 'log' : 'linear', 
+                gridcolor: '#f0f0f0', zeroline: false 
+            },
+            yaxis: { 
+                title: { text: conf.y, font: { size: 12, color: '#7f8c8d' } }, 
+                type: isLogY ? 'log' : 'linear', 
+                gridcolor: '#f0f0f0', zeroline: false 
+            },
             margin: { t: 40, r: 20, b: 80, l: 80 },
             hovermode: 'closest',
-            showlegend: true,
             legend: { orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center' },
-            shapes: shapes
+            shapes: shapes,
+            annotations: annotations
         };
 
         Plotly.newPlot('plot', traces, layout, {responsive: true, displayModeBar: true});
