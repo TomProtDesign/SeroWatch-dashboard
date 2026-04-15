@@ -2,159 +2,129 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard Sérologie Interactif</title>
+    <title>SeroWatch Dashboard</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f7f6; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .filter-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; background: #e9ecef; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 1300px; margin: 0 auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; margin-bottom: 20px; padding-bottom: 10px; }
+        .filter-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; background: #fafafa; padding: 20px; border-radius: 10px; border: 1px solid #eee; }
         .filter-group { display: flex; flex-direction: column; }
-        label { font-weight: bold; margin-bottom: 5px; font-size: 0.9em; }
-        select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
-        #plot { width: 100%; height: 700px; }
+        label { font-weight: bold; margin-bottom: 8px; font-size: 0.85rem; color: #555; }
+        select { padding: 10px; border-radius: 6px; border: 1px solid #ddd; background: white; font-size: 0.9rem; }
+        #plot { width: 100%; height: 650px; margin-top: 20px; }
+        .footer { margin-top: 15px; font-size: 0.8rem; color: #888; text-align: right; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Analyse des résultats de sérologie</h2>
+    <div class="header">
+        <h2>📊 SeroWatch ARI</h2>
+        <div id="counter" style="font-weight: bold; color: #3498db;">Chargement...</div>
+    </div>
     
     <div class="filter-panel">
-        <div class="filter-group">
-            <label>Axe X (Mesure)</label>
-            <select id="x-axis"></select>
-        </div>
-        <div class="filter-group">
-            <label>Axe Y (Mesure)</label>
-            <select id="y-axis"></select>
-        </div>
-        
-        <div class="filter-group">
-            <label>Département</label>
-            <select id="filter-dept"><option value="All">Tous</option></select>
-        </div>
-        <div class="filter-group">
-            <label>Sexe</label>
-            <select id="filter-sexe">
-                <option value="All">Tous</option>
-                <option value="mâle">Mâle</option>
-                <option value="female">Female</option>
-            </select>
-        </div>
-        <div class="filter-group">
-            <label>Tranche d'âge</label>
-            <select id="filter-age"><option value="All">Tous</option></select>
-        </div>
-        
-        <div class="filter-group">
-            <label>Colorer par :</label>
-            <select id="color-by">
-                <option value="departement">Département</option>
-                <option value="sexe">Sexe</option>
-                <option value="age_group">Tranche d'âge</option>
-            </select>
-        </div>
+        <div class="filter-group"><label>Axe X</label><select id="x-axis"></select></div>
+        <div class="filter-group"><label>Axe Y</label><select id="y-axis"></select></div>
+        <div class="filter-group"><label>Département</label><select id="f-dept"><option value="All">Tous</option></select></div>
+        <div class="filter-group"><label>Sexe</label><select id="f-sexe"><option value="All">Tous</option></select></div>
+        <div class="filter-group"><label>Âge</label><select id="f-age"><option value="All">Tous</option></select></div>
+        <div class="filter-group"><label>Colorer par</label><select id="color-by">
+            <option value="DEPARTMENT OF SAMPLING">Département</option>
+            <option value="SEXE">Sexe</option>
+            <option value="age_group">Tranche d'âge</option>
+        </select></div>
     </div>
 
     <div id="plot"></div>
+    <div class="footer">Données issues de : SeroWatch_ARI_W38Y24_data.csv</div>
 </div>
 
 <script>
-    let globalData = [];
+    let rawData = [];
+    const CSV_FILE = "SeroWatch_ARI_W38Y24_data.csv";
 
-    // 1. Charger le fichier CSV
-    d3.csv("data.csv").then(data => {
-        // Conversion des colonnes numériques (âge et mesures)
+    // 1. Chargement simplifié (D3 gère tout si le CSV est standard)
+    d3.csv(CSV_FILE).then(data => {
         data.forEach(d => {
-            for (let key in d) {
-                if (!isNaN(d[key]) && d[key] !== "") {
-                    d[key] = +d[key];
-                }
-            }
-            // Création des tranches d'âge de 10 ans
-            const age = +d.age;
-            const start = Math.floor(age / 10) * 10;
+            // Conversion automatique des nombres
+            Object.keys(d).forEach(key => {
+                if (!isNaN(d[key]) && d[key] !== "") d[key] = +d[key];
+            });
+            // Tranches d'âge
+            const start = Math.floor(d.AGE / 10) * 10;
             d.age_group = `${start}-${start + 9} ans`;
         });
-
-        globalData = data;
-        initInterface();
-    }).catch(err => {
-        console.error("Erreur de chargement du CSV : ", err);
-        alert("Impossible de charger le fichier data.csv. Vérifiez qu'il est bien sur votre GitHub.");
+        rawData = data;
+        setupSelectors();
+        draw();
     });
 
-    function initInterface() {
-        const keys = Object.keys(globalData[0]);
-        const measures = keys.filter(k => !['id', 'age', 'sexe', 'departement', 'age_group'].includes(k));
-        
-        // Remplir X et Y
-        const xSelect = document.getElementById('x-axis');
-        const ySelect = document.getElementById('y-axis');
-        measures.forEach(m => {
-            xSelect.add(new Option(m, m));
-            ySelect.add(new Option(m, m));
-        });
-        ySelect.selectedIndex = 1;
+    function setupSelectors() {
+        const measures = Object.keys(rawData[0]).filter(k => 
+            !['N°INCLUSION', 'SEXE', 'DEPARTMENT OF SAMPLING', 'AGE', 'age_group'].includes(k)
+        );
 
-        // Remplir Départements
-        const depts = [...new Set(globalData.map(d => d.departement))].sort();
-        const deptSelect = document.getElementById('filter-dept');
-        depts.forEach(d => deptSelect.add(new Option(d, d)));
+        const fill = (id, options) => {
+            const s = document.getElementById(id);
+            options.forEach(o => s.add(new Option(o, o)));
+        };
 
-        // Remplir Tranches d'âge
-        const ageGroups = [...new Set(globalData.map(d => d.age_group))].sort((a,b) => parseInt(a) - parseInt(b));
-        const ageSelect = document.getElementById('filter-age');
-        ageGroups.forEach(g => ageSelect.add(new Option(g, g)));
+        fill('x-axis', measures);
+        fill('y-axis', measures);
+        document.getElementById('y-axis').selectedIndex = 2; // Par défaut IgG
 
-        // Écouteurs d'événements
-        document.querySelectorAll('select').forEach(s => s.addEventListener('change', updatePlot));
+        fill('f-dept', [...new Set(rawData.map(d => d['DEPARTMENT OF SAMPLING']))].sort());
+        fill('f-sexe', [...new Set(rawData.map(d => d.SEXE))].sort());
+        fill('f-age', [...new Set(rawData.map(d => d.age_group))].sort((a,b) => parseInt(a)-parseInt(b)));
 
-        updatePlot();
+        document.querySelectorAll('select').forEach(s => s.addEventListener('change', draw));
     }
 
-    function updatePlot() {
-        const xVar = document.getElementById('x-axis').value;
-        const yVar = document.getElementById('y-axis').value;
-        const fDept = document.getElementById('filter-dept').value;
-        const fSexe = document.getElementById('filter-sexe').value;
-        const fAge = document.getElementById('filter-age').value;
-        const colorBy = document.getElementById('color-by').value;
+    function draw() {
+        const conf = {
+            x: document.getElementById('x-axis').value,
+            y: document.getElementById('y-axis').value,
+            dept: document.getElementById('f-dept').value,
+            sexe: document.getElementById('f-sexe').value,
+            age: document.getElementById('f-age').value,
+            color: document.getElementById('color-by').value
+        };
 
-        // Filtrage des données
-        const filtered = globalData.filter(d => {
-            return (fDept === 'All' || d.departement === fDept) &&
-                   (fSexe === 'All' || d.sexe === fSexe) &&
-                   (fAge === 'All' || d.age_group === fAge);
-        });
+        const filtered = rawData.filter(d => 
+            (conf.dept === 'All' || d['DEPARTMENT OF SAMPLING'] == conf.dept) &&
+            (conf.sexe === 'All' || d.SEXE === conf.sexe) &&
+            (conf.age === 'All' || d.age_group === conf.age)
+        );
 
-        // Groupement pour la couleur (Trace par catégorie pour avoir une légende)
-        const categories = [...new Set(filtered.map(d => d[colorBy]))];
-        const traces = categories.map(cat => {
-            const group = filtered.filter(d => d[colorBy] === cat);
+        document.getElementById('counter').innerText = `${filtered.length} patients affichés`;
+
+        const groups = [...new Set(filtered.map(d => d[conf.color]))].sort();
+        const traces = groups.map(g => {
+            const sub = filtered.filter(d => d[conf.color] === g);
             return {
-                x: group.map(d => d[xVar]),
-                y: group.map(d => d[yVar]),
-                name: cat,
+                x: sub.map(d => d[conf.x]),
+                y: sub.map(d => d[conf.y]),
+                name: String(g),
                 mode: 'markers',
                 type: 'scatter',
-                text: group.map(d => `Sexe: ${d.sexe}<br>Age: ${d.age}<br>Dept: ${d.departement}`),
-                marker: { size: 10, opacity: 0.7 }
+                marker: { size: 9, opacity: 0.6, line: {width: 0.5, color: 'white'} },
+                text: sub.map(d => `ID: ${d['N°INCLUSION']}<br>Âge: ${d.AGE} ans`)
             };
         });
 
         const layout = {
-            title: `${xVar} vs ${yVar}`,
-            xaxis: { title: xVar },
-            yaxis: { title: yVar },
+            xaxis: { title: conf.x, gridcolor: '#eee', zeroline: false },
+            yaxis: { title: conf.y, gridcolor: '#eee', zeroline: false },
+            margin: { t: 20, r: 20 },
             hovermode: 'closest',
-            legend: { title: { text: colorBy.toUpperCase() } }
+            legend: { orientation: 'h', y: -0.2 }
         };
 
-        Plotly.newPlot('plot', traces, layout);
+        Plotly.newPlot('plot', traces, layout, {responsive: true});
     }
 </script>
-
 </body>
 </html>
