@@ -2,35 +2,58 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Explorateur de Sérologie</title>
-    
+    <title>Dashboard Sérologie Interactif</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f8f9fa;}
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .controls { display: flex; gap: 20px; margin-bottom: 20px; padding: 15px; background: #e9ecef; border-radius: 6px;}
-        .control-group { display: flex; flex-direction: column; flex: 1;}
-        label { font-weight: bold; margin-bottom: 5px; }
-        select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; }
-        #plot { width: 100%; height: 600px; }
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .filter-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; background: #e9ecef; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .filter-group { display: flex; flex-direction: column; }
+        label { font-weight: bold; margin-bottom: 5px; font-size: 0.9em; }
+        select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
+        #plot { width: 100%; height: 700px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Explorateur de données d'Anticorps 🦠</h1>
-    <p>Sélectionnez les antigènes et les mesures à comparer sur les axes X et Y.</p>
-
-    <div class="controls">
-        <div class="control-group">
-            <label for="x-axis">Axe X :</label>
+    <h2>Analyse des résultats de sérologie</h2>
+    
+    <div class="filter-panel">
+        <div class="filter-group">
+            <label>Axe X (Mesure)</label>
             <select id="x-axis"></select>
         </div>
-        <div class="control-group">
-            <label for="y-axis">Axe Y :</label>
+        <div class="filter-group">
+            <label>Axe Y (Mesure)</label>
             <select id="y-axis"></select>
+        </div>
+        
+        <div class="filter-group">
+            <label>Département</label>
+            <select id="filter-dept"><option value="All">Tous</option></select>
+        </div>
+        <div class="filter-group">
+            <label>Sexe</label>
+            <select id="filter-sexe">
+                <option value="All">Tous</option>
+                <option value="mâle">Mâle</option>
+                <option value="female">Female</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Tranche d'âge</label>
+            <select id="filter-age"><option value="All">Tous</option></select>
+        </div>
+        
+        <div class="filter-group">
+            <label>Colorer par :</label>
+            <select id="color-by">
+                <option value="departement">Département</option>
+                <option value="sexe">Sexe</option>
+                <option value="age_group">Tranche d'âge</option>
+            </select>
         </div>
     </div>
 
@@ -38,72 +61,99 @@
 </div>
 
 <script>
-    // 1. Vos données de sérologie (formatées en JavaScript)
-    // Plus tard, vous pourrez charger un fichier CSV automatiquement, 
-    // mais pour commencer, on met les données directement ici.
-    const data = [
-        { Patient: 'Patient_001', Ag1_IgG: 1.2, Ag1_IgM: 0.5, Ag2_IgG: 0.9, Ag2_Avidite: 45 },
-        { Patient: 'Patient_002', Ag1_IgG: 0.8, Ag1_IgM: 1.1, Ag2_IgG: 0.7, Ag2_Avidite: 60 },
-        { Patient: 'Patient_003', Ag1_IgG: 2.5, Ag1_IgM: 0.2, Ag2_IgG: 1.8, Ag2_Avidite: 85 },
-        { Patient: 'Patient_004', Ag1_IgG: 0.4, Ag1_IgM: 2.0, Ag2_IgG: 0.6, Ag2_Avidite: 30 },
-        { Patient: 'Patient_005', Ag1_IgG: 3.1, Ag1_IgM: 0.8, Ag2_IgG: 2.9, Ag2_Avidite: 92 }
-    ];
+    let globalData = [];
 
-    // 2. Extraire la liste des variables (tout sauf la colonne 'Patient')
-    // Cela permet de créer les menus déroulants automatiquement
-    const variables = Object.keys(data[0]).filter(key => key !== 'Patient');
+    // 1. Charger le fichier CSV
+    d3.csv("data.csv").then(data => {
+        // Conversion des colonnes numériques (âge et mesures)
+        data.forEach(d => {
+            for (let key in d) {
+                if (!isNaN(d[key]) && d[key] !== "") {
+                    d[key] = +d[key];
+                }
+            }
+            // Création des tranches d'âge de 10 ans
+            const age = +d.age;
+            const start = Math.floor(age / 10) * 10;
+            d.age_group = `${start}-${start + 9} ans`;
+        });
 
-    const xSelect = document.getElementById('x-axis');
-    const ySelect = document.getElementById('y-axis');
-
-    // 3. Remplir les menus déroulants avec les variables
-    variables.forEach(variable => {
-        xSelect.add(new Option(variable, variable));
-        ySelect.add(new Option(variable, variable));
+        globalData = data;
+        initInterface();
+    }).catch(err => {
+        console.error("Erreur de chargement du CSV : ", err);
+        alert("Impossible de charger le fichier data.csv. Vérifiez qu'il est bien sur votre GitHub.");
     });
-    // Sélectionner une variable différente pour l'axe Y par défaut
-    if (variables.length > 1) { ySelect.selectedIndex = 1; }
 
-    // 4. Fonction principale pour dessiner ou mettre à jour le graphique
-    function updatePlot() {
-        const xVar = xSelect.value;
-        const yVar = ySelect.value;
+    function initInterface() {
+        const keys = Object.keys(globalData[0]);
+        const measures = keys.filter(k => !['id', 'age', 'sexe', 'departement', 'age_group'].includes(k));
+        
+        // Remplir X et Y
+        const xSelect = document.getElementById('x-axis');
+        const ySelect = document.getElementById('y-axis');
+        measures.forEach(m => {
+            xSelect.add(new Option(m, m));
+            ySelect.add(new Option(m, m));
+        });
+        ySelect.selectedIndex = 1;
 
-        // Préparation des points pour Plotly
-        const trace = {
-            x: data.map(row => row[xVar]), // Récupère toutes les valeurs de X
-            y: data.map(row => row[yVar]), // Récupère toutes les valeurs de Y
-            text: data.map(row => row.Patient), // Affiche le nom du patient au survol
-            mode: 'markers',
-            type: 'scatter',
-            marker: { 
-                size: 12, 
-                opacity: 0.7, 
-                color: '#2ca02c', // Couleur des points
-                line: { width: 1, color: '#000' } 
-            },
-            hovertemplate: '<b>%{text}</b><br>X (%{xaxis.title.text}): %{x}<br>Y (%{yaxis.title.text}): %{y}<extra></extra>'
-        };
+        // Remplir Départements
+        const depts = [...new Set(globalData.map(d => d.departement))].sort();
+        const deptSelect = document.getElementById('filter-dept');
+        depts.forEach(d => deptSelect.add(new Option(d, d)));
 
-        // Configuration visuelle du graphique
-        const layout = {
-            title: `Comparaison : ${xVar} vs ${yVar}`,
-            xaxis: { title: xVar, zeroline: false },
-            yaxis: { title: yVar, zeroline: false },
-            hovermode: 'closest'
-        };
+        // Remplir Tranches d'âge
+        const ageGroups = [...new Set(globalData.map(d => d.age_group))].sort((a,b) => parseInt(a) - parseInt(b));
+        const ageSelect = document.getElementById('filter-age');
+        ageGroups.forEach(g => ageSelect.add(new Option(g, g)));
 
-        // Génération du graphique
-        Plotly.newPlot('plot', [trace], layout);
+        // Écouteurs d'événements
+        document.querySelectorAll('select').forEach(s => s.addEventListener('change', updatePlot));
+
+        updatePlot();
     }
 
-    // 5. Écouter les changements dans les menus déroulants
-    // Dès qu'on change une option, la fonction updatePlot est relancée
-    xSelect.addEventListener('change', updatePlot);
-    ySelect.addEventListener('change', updatePlot);
+    function updatePlot() {
+        const xVar = document.getElementById('x-axis').value;
+        const yVar = document.getElementById('y-axis').value;
+        const fDept = document.getElementById('filter-dept').value;
+        const fSexe = document.getElementById('filter-sexe').value;
+        const fAge = document.getElementById('filter-age').value;
+        const colorBy = document.getElementById('color-by').value;
 
-    // 6. Dessiner le graphique une première fois au chargement de la page
-    updatePlot();
+        // Filtrage des données
+        const filtered = globalData.filter(d => {
+            return (fDept === 'All' || d.departement === fDept) &&
+                   (fSexe === 'All' || d.sexe === fSexe) &&
+                   (fAge === 'All' || d.age_group === fAge);
+        });
+
+        // Groupement pour la couleur (Trace par catégorie pour avoir une légende)
+        const categories = [...new Set(filtered.map(d => d[colorBy]))];
+        const traces = categories.map(cat => {
+            const group = filtered.filter(d => d[colorBy] === cat);
+            return {
+                x: group.map(d => d[xVar]),
+                y: group.map(d => d[yVar]),
+                name: cat,
+                mode: 'markers',
+                type: 'scatter',
+                text: group.map(d => `Sexe: ${d.sexe}<br>Age: ${d.age}<br>Dept: ${d.departement}`),
+                marker: { size: 10, opacity: 0.7 }
+            };
+        });
+
+        const layout = {
+            title: `${xVar} vs ${yVar}`,
+            xaxis: { title: xVar },
+            yaxis: { title: yVar },
+            hovermode: 'closest',
+            legend: { title: { text: colorBy.toUpperCase() } }
+        };
+
+        Plotly.newPlot('plot', traces, layout);
+    }
 </script>
 
 </body>
