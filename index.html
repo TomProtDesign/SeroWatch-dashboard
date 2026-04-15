@@ -137,10 +137,11 @@
 
         // Helper function to add units automatically
         const formatTitle = (name) => {
-            if (name.includes('IgG') || name.includes('IgM') || name.includes('IgA')) {
-                return `${name} (RLU/s)`;
-            } else if (name.toLowerCase().includes('avid')) {
+            if (name.toLowerCase().includes('avid')) {
                 return `${name} (Avidity Index)`;
+            } 
+            else if (name.includes('IgG') || name.includes('IgM') || name.includes('IgA')) {
+                return `${name} (RLU/s)`;
             }
             return name;
         };
